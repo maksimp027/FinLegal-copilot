@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  api:
+    build: .
+    container_name: finlegal_copilot_api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./local_qdrant:/app/local_qdrant
+      - ./.env:/app/.env
+    restart: unless-stopped
+    environment:
+      - PYTHONUNBUFFERED=1

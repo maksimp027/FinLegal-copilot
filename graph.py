@@ -34,17 +34,30 @@ def retrieve_node(state: CopilotState) -> dict:
     return {"retrieved_context": context_str}
 
 
+def load_filters() -> str:
+    try:
+        with open("data/filters.txt", "r") as f:
+            return f.read()
+    except FileNotFoundError:
+        return "No specific rules provided."
+
 def draft_node(state: CopilotState) -> dict:
     logger.info("--- NODE: DRAFT ---")
-    llm = ChatGroq(model="llama3-8b-8192", temperature=0.0)
+    config = PipelineConfig()
+    llm = ChatGroq(model=config.llm_model, api_key=config.groq_api_key, temperature=0.0)
 
     feedback_section = ""
     if state.get("compliance_feedback"):
         feedback_section = f"\n\nCRITIC FEEDBACK TO FIX: {state['compliance_feedback']}"
 
+    filters = load_filters()
+
     system_prompt = """You are a professional legal assistant.
     Answer the complaint using ONLY the provided policy context.
     Do not invent information. Be empathetic but legally strict.
+
+    RULES TO FOLLOW:
+    {filters}
 
     CONTEXT:
     {context}
@@ -57,7 +70,9 @@ def draft_node(state: CopilotState) -> dict:
     ])
 
     chain = prompt | llm
+    # To support async natively, LangChain's ainvoke is used. For low-code, this is sufficient.
     response = chain.invoke({
+        "filters": filters,
         "context": state["retrieved_context"],
         "complaint": state["complaint"],
         "feedback": feedback_section
@@ -75,15 +90,16 @@ class CriticOutput(BaseModel):
 
 def critic_node(state: CopilotState) -> dict:
     logger.info("--- NODE: COMPLIANCE CRITIC ---")
-    llm = ChatGroq(model="llama3-8b-8192", temperature=0.0)
+    config = PipelineConfig()
+    llm = ChatGroq(model=config.llm_model, api_key=config.groq_api_key, temperature=0.0)
     evaluator = llm.with_structured_output(CriticOutput)
+    filters = load_filters()
 
     evaluation_prompt = ChatPromptTemplate.from_messages([
         ("system", """You are a strict Compliance Officer. 
         Compare the Draft Response against the Corporate Context.
         RULES:
-        1. The draft MUST NOT promise refunds if the context forbids it.
-        2. The draft MUST NOT contain information outside the context.
+        {filters}
         If it violates rules, return is_approved=False and provide actionable feedback."""),
         ("human", "CONTEXT:\n{context}\n\nDRAFT RESPONSE:\n{draft}")
     ])
@@ -91,6 +107,7 @@ def critic_node(state: CopilotState) -> dict:
     chain = evaluation_prompt | evaluator
 
     result: CriticOutput = chain.invoke({
+        "filters": filters,
         "context": state["retrieved_context"],
         "draft": state["draft_response"]
     })
