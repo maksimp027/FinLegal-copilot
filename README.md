@@ -1,103 +1,103 @@
-# FinLegal Copilot 🧑‍⚖️🤖
+# FinLegal Copilot
 
-FinLegal Copilot — це інтелектуальний асистент на базі **LangGraph** та **FastAPI**, розроблений для автоматизації обробки скарг клієнтів фінансових або юридичних установ. Проєкт використовує підхід RAG (Retrieval-Augmented Generation), щоб формувати відповіді суворо на основі корпоративних політик, гарантуючи комплаєнс. 
+FinLegal Copilot is an intelligent, multi-agent Retrieval-Augmented Generation (RAG) system built to automate the processing of customer complaints for financial and legal institutions. 
 
-Окрім базової RAG архітектури, система містить **семантичне кешування** (Semantic Caching), що дозволяє миттєво відповідати на схожі скарги без звернення до LLM.
-
----
-
-## 🏗 Архітектура
-
-Проєкт побудовано з урахуванням архітектурних принципів **DRY** та **DDIA** (гнучкість конфігурації, єдине джерело істини, надійність). 
-
-Всі налаштування (назви моделей, API ключі, шляхи) зібрані в `PipelineConfig` (використовується `pydantic-settings`), який автоматично витягує дані з вашого `.env`.
-
-### Основні модулі:
-1. **`api.py` (API та Семантичний Кеш)**
-   - Високопродуктивний асинхронний REST API за допомогою **FastAPI**.
-   - Перед запитом до LLM система векторизує скаргу та перевіряє колекцію `semantic_cache` в Qdrant. Якщо знайдено аналогічний запит (схожість >= 95%), миттєво повертається готова відповідь.
-   - Якщо це новий запит (Cache Miss) — асинхронно запускається граф прийняття рішень, а результат зберігається в кеш.
-2. **`ingestion.py` (ETL Пайплайн)**
-   - Завантажує `.txt` файли з корпоративними політиками з директорії `data/`.
-   - Розбиває їх на чанки, генерує ембединги (через модель `BAAI/bge-small-en-v1.5`) та зберігає в **Qdrant**.
-3. **`graph.py` (LangGraph Workflow)**
-   - **Retriever Node**: Витягує релевантний контекст з бази.
-   - **Drafter Node**: Генерує чернетку юридичної відповіді за допомогою Groq (LLaMA 3).
-   - **Critic Node**: Перевіряє згенеровану чернетку на відповідність жорстким правилам (з `data/filters.txt`). За необхідності змушує Drafter Node переписати відповідь.
+Powered by **LangGraph** and **FastAPI**, this system ensures high compliance by grounding all LLM responses strictly in corporate policies, effectively eliminating hallucinations. To optimize performance and reduce API costs, the system features a robust **Semantic Caching** layer.
 
 ---
 
-## 🚀 Деплой через Docker (Рекомендовано)
+## Key Features
 
-Завдяки Docker Compose ви можете розгорнути весь проєкт однією командою.
+- **Multi-Agent Architecture**: Utilizes LangGraph to implement a "Drafter-Critic" workflow. A Drafter agent generates the initial response, and a strict Critic (Compliance Officer) agent evaluates it against rigid rules.
+- **Semantic Caching**: Incoming requests are vectorized and compared against previously resolved complaints in Qdrant. If a highly similar query is found (≥ 95% cosine similarity), the cached response is returned instantly without hitting the LLM API.
+- **Low-Code Philosophy**: Business rules, policies, and compliance filters are completely decoupled from the codebase. They are injected dynamically from text files, allowing business users to update constraints without modifying Python code.
+- **Production-Ready API**: Wrapped in a fast, asynchronous REST API using FastAPI.
+- **Containerized**: Fully containerized using Docker and Docker Compose for easy deployment.
+- **Automated Testing**: Comprehensive mock-based test suite using `pytest`.
 
-1. **Створіть `.env`** файл у корені проєкту:
-   ```env
-   GROQ_API_KEY=ваш_ключ
-   CHUNK_SIZE=500
-   CHUNK_OVERLAP=50
-   COLLECTION_NAME=finlegal_policies
-   DB_PATH=./local_qdrant
-   EMBEDDING_MODEL=BAAI/bge-small-en-v1.5
-   LLM_MODEL=llama3-8b-8192
-   ```
+## Architecture & Design Patterns
 
-2. **Запустіть контейнер**:
-   ```bash
-   docker compose up --build -d
-   ```
-   API буде доступне за адресою `http://localhost:8000/docs`.
+This project adheres to **DRY** (Don't Repeat Yourself) and **DDIA** (Designing Data-Intensive Applications) principles. A single source of truth (`PipelineConfig` built with Pydantic) dynamically manages environment variables, models, and database connections across all system layers.
 
-3. **Завантажте дані у векторну базу** (виконати в контейнері один раз):
-   ```bash
-   docker exec -it finlegal_copilot_api python ingestion.py
-   ```
+### System Components:
+1. **API Layer (`api.py`)**: Asynchronous FastAPI endpoints that handle incoming requests, query the Qdrant semantic cache, and asynchronously invoke the LangGraph workflow on cache misses.
+2. **Ingestion Pipeline (`ingestion.py`)**: An ETL pipeline that reads raw policy documents (`data/policies.txt`), chunks them, generates dense vector embeddings (via `BAAI/bge-small-en-v1.5`), and stores them in Qdrant.
+3. **Reasoning Graph (`graph.py`)**: 
+   - **Retriever**: Queries the vector database for relevant legal context.
+   - **Drafter**: Generates an empathetic yet legally strict response.
+   - **Critic**: Analyzes the draft against compliance constraints (e.g., "Do not promise refunds"). If the draft fails, it loops back to the Drafter with actionable feedback.
 
-*(Примітка: директорії `data/` та `local_qdrant/` підмонтовані як volumes, тому ви можете редагувати політики безпосередньо на вашому комп'ютері, і вони будуть доступні в контейнері).*
+## Tech Stack
+
+- **Frameworks**: FastAPI, Uvicorn, LangChain, LangGraph
+- **Machine Learning / LLMs**: Groq API (LLaMA 3 8B), HuggingFace Embeddings
+- **Vector Database**: Qdrant (used for both RAG context and Semantic Caching)
+- **Infrastructure & Testing**: Docker, Docker Compose, Pytest, Pydantic
 
 ---
 
-## 💻 Локальний запуск (Без Docker)
+## Quick Start
 
-Якщо ви бажаєте розробляти або запускати застосунок локально:
+### 1. Prerequisites
+- Docker and Docker Compose installed
+- A valid Groq API Key
 
-1. **Віртуальне середовище**:
+### 2. Configuration
+Create a `.env` file in the root directory:
+```env
+GROQ_API_KEY=your_groq_api_key_here
+CHUNK_SIZE=500
+CHUNK_OVERLAP=50
+COLLECTION_NAME=finlegal_policies
+DB_PATH=./local_qdrant
+EMBEDDING_MODEL=BAAI/bge-small-en-v1.5
+LLM_MODEL=llama3-8b-8192
+```
+
+### 3. Provide Business Logic
+Place your policies and rules in the `data/` directory (these files are intentionally ignored by git to protect private data):
+- `data/policies.txt`: Corporate rules, SLAs, and legal guidelines.
+- `data/filters.txt`: Strict conditions for the Critic node (e.g., "1. Do not promise refunds. 2. Only use provided context.")
+
+### 4. Run with Docker (Recommended)
+Launch the application:
+```bash
+docker compose up --build -d
+```
+
+Initialize the vector database with your policies (run this once):
+```bash
+docker exec -it finlegal_copilot_api python ingestion.py
+```
+
+The API will now be available at `http://localhost:8000/docs`.
+
+---
+
+## Running Locally (Without Docker)
+
+1. Create a virtual environment and install dependencies:
    ```bash
    python3 -m venv .venv
    source .venv/bin/activate
-   ```
-2. **Залежності**:
-   ```bash
    pip install -r requirements.txt
    ```
-3. **Підготовка даних**:
-   - Переконайтеся, що налаштували `.env` (див. крок 1 з Docker-інструкції).
-   - Запустіть векторну базу:
-     ```bash
-     python ingestion.py
-     ```
-4. **Запуск сервера**:
+2. Populate the vector database:
+   ```bash
+   python ingestion.py
+   ```
+3. Start the API server:
    ```bash
    uvicorn api:app --reload
    ```
 
 ---
 
-## 🧪 Автотести
+## Testing
 
-Для проєкту написані модульні тести за допомогою `pytest` та `TestClient`. Вони ізольовано перевіряють логіку API без реальних запитів до Groq.
+The project includes an automated test suite that mocks the Qdrant database and the Groq LLM API to ensure safe, cost-free testing.
 
-Для запуску тестів виконайте:
+Run the tests using `pytest`:
 ```bash
 PYTHONPATH=. pytest tests/
 ```
-
----
-
-## 📁 Налаштування політик (Low-Code)
-
-Проєкт підтримує оновлення логіки без зміни коду (Low-Code філософія):
-- `data/policies.txt`: Ваші корпоративні правила та інструкції, на які спиратиметься RAG.
-- `data/filters.txt`: Чіткі обмеження, за якими Critic Node перевіряє відповіді (наприклад, *"Заборонити обіцянки про відшкодування"*).
-
-Ці файли (як і ваші `.env` ключі та база `local_qdrant/`) **ігноруються** системою Git (`.gitignore`), щоб захистити ваші приватні дані та ключі під час публікації на GitHub.
